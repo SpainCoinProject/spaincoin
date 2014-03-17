@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>AboutDialog</class>
  <widget class="QDialog" name="AboutDialog">
@@ -92,7 +92,7 @@
        </property>
        <property name="text">
         <string notr="true">Copyright &amp;copy; 2009-YYYY The Bitcoin developers
-Copyright &amp;copy; 2011-YYYY The Spaincoin developers
+Copyright &amp;copy; 2011-YYYY The Litecoin developers
 Copyright &amp;copy; 2014-YYYY The Spaincoin developers</string>
        </property>
        <property name="textFormat">
