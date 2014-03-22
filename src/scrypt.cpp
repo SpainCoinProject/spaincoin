@@ -34,16 +34,6 @@
 #include <string.h>
 #include <openssl/sha.h>
 
-#if defined(USE_SSE2) && !defined(USE_SSE2_ALWAYS)
-#ifdef _MSC_VER
-// MSVC 64bit is unable to use inline asm
-#include <intrin.h>
-#else
-// GCC Linux or i686-w64-mingw32
-#include <cpuid.h>
-#endif
-#endif
-
 static inline uint32_t be32dec(const void *pp)
 {
 	const uint8_t *p = (uint8_t const *)pp;
@@ -253,12 +243,12 @@ static inline void xor_salsa8(uint32_t B[16], const uint32_t Bx[16])
 	B[15] += x15;
 }
 
-void scrypt_1024_1_1_256_sp_generic(const char *input, char *output, char *scratchpad)
+void scrypt_N_1_1_256_sp_generic(const char *input, char *output, char *scratchpad, unsigned char Nfactor)
 {
 	uint8_t B[128];
 	uint32_t X[32];
 	uint32_t *V;
-	uint32_t i, j, k;
+	uint32_t i, j, k, N;
 
 	V = (uint32_t *)(((uintptr_t)(scratchpad) + 63) & ~ (uintptr_t)(63));
 
@@ -267,13 +257,16 @@ void scrypt_1024_1_1_256_sp_generic(const char *input, char *output, char *scrat
 	for (k = 0; k < 32; k++)
 		X[k] = le32dec(&B[4 * k]);
 
-	for (i = 0; i < 1024; i++) {
+        N = (1 << (Nfactor + 1));
+        
+	for (i = 0; i < N; i++) {
 		memcpy(&V[i * 32], X, 128);
 		xor_salsa8(&X[0], &X[16]);
 		xor_salsa8(&X[16], &X[0]);
 	}
-	for (i = 0; i < 1024; i++) {
-		j = 32 * (X[16] & 1023);
+	for (i = 0; i < N; i++) {
+		//j = 32 * (X[16] & 1023);
+                j = 32 * (X[16] & (N-1));
 		for (k = 0; k < 32; k++)
 			X[k] ^= V[j + k];
 		xor_salsa8(&X[0], &X[16]);
@@ -287,43 +280,47 @@ void scrypt_1024_1_1_256_sp_generic(const char *input, char *output, char *scrat
 }
 
 #if defined(USE_SSE2)
-// By default, set to generic scrypt function. This will prevent crash in case when scrypt_detect_sse2() wasn't called
-void (*scrypt_1024_1_1_256_sp_detected)(const char *input, char *output, char *scratchpad) = &scrypt_1024_1_1_256_sp_generic;
-
-void scrypt_detect_sse2()
+#if defined(_M_X64) || defined(__x86_64__) || defined(_M_AMD64) || (defined(MAC_OSX) && defined(__i386__))
+/* Always SSE2 */
+void scrypt_detect_sse2(unsigned int cpuid_edx)
 {
-#if defined(USE_SSE2_ALWAYS)
     printf("scrypt: using scrypt-sse2 as built.\n");
-#else // USE_SSE2_ALWAYS
-    // 32bit x86 Linux or Windows, detect cpuid features
-    unsigned int cpuid_edx=0;
-#if defined(_MSC_VER)
-    // MSVC
-    int x86cpuid[4];
-    __cpuid(x86cpuid, 1);
-    cpuid_edx = (unsigned int)buffer[3];
-#else // _MSC_VER
-    // Linux or i686-w64-mingw32 (gcc-4.6.3)
-    unsigned int eax, ebx, ecx;
-    __get_cpuid(1, &eax, &ebx, &ecx, &cpuid_edx);
-#endif // _MSC_VER
+}
+#else
+/* Detect SSE2 */
+void (*scrypt_N_1_1_256_sp)(const char *input, char *output, char *scratchpad, unsigned char Nfactor);
 
+void scrypt_detect_sse2(unsigned int cpuid_edx)
+{
     if (cpuid_edx & 1<<26)
     {
-        scrypt_1024_1_1_256_sp_detected = &scrypt_1024_1_1_256_sp_sse2;
+        scrypt_N_1_1_256_sp = &scrypt_N_1_1_256_sp_sse2;
         printf("scrypt: using scrypt-sse2 as detected.\n");
     }
     else
     {
-        scrypt_1024_1_1_256_sp_detected = &scrypt_1024_1_1_256_sp_generic;
+        scrypt_N_1_1_256_sp = &scrypt_N_1_1_256_sp_generic;
         printf("scrypt: using scrypt-generic, SSE2 unavailable.\n");
     }
-#endif // USE_SSE2_ALWAYS
 }
 #endif
+#endif
 
-void scrypt_1024_1_1_256(const char *input, char *output)
+void scrypt_N_1_1_256(const char *input, char *output, unsigned char Nfactor)
 {
-	char scratchpad[SCRYPT_SCRATCHPAD_SIZE];
-    scrypt_1024_1_1_256_sp(input, output, scratchpad);
+	char scratchpad[((1 << (Nfactor + 1)) * 128 ) + 63];
+#if defined(USE_SSE2)
+        // Detection would work, but in cases where we KNOW it always has SSE2,
+        // it is faster to use directly than to use a function pointer or conditional.
+#if defined(_M_X64) || defined(__x86_64__) || defined(_M_AMD64) || (defined(MAC_OSX) && defined(__i386__))
+        // Always SSE2: x86_64 or Intel MacOS X
+        scrypt_N_1_1_256_sp_sse2(input, output, scratchpad, Nfactor);
+#else
+        // Detect SSE2: 32bit x86 Linux or Windows
+        scrypt_N_1_1_256_sp(input, output, scratchpad, Nfactor);
+#endif
+#else
+        // Generic scrypt
+        scrypt_N_1_1_256_sp_generic(input, output, scratchpad, Nfactor);
+#endif
 }

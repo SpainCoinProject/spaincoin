@@ -10,7 +10,7 @@ Copyright (c) 2014 Spaincoin Developers
 What is Spaincoin?
 ----------------
 
-Spaincoin is a lite version of Bitcoin using scrypt as a proof-of-work algorithm.
+Spaincoin is a lite version of Bitcoin using scrypt-adaptive-N as a proof-of-work algorithm.
  - 2 minute block targets
  - subsidy halves in ~8 months, gradually
  - 50 million total coins, 50% of which are premined to give away to Spaniards

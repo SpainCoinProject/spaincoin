@@ -49,6 +49,8 @@ bool fReindex = false;
 bool fBenchmark = false;
 bool fTxIndex = false;
 unsigned int nCoinCacheSize = 5000;
+int64 nChainStartTimeNAdaptive = 1389306217; // Line: 2815
+int64 nHardforkStartTime =  1395684000;  
 
 /** Fees smaller than this (in satoshi) are considered zero fee (for transaction creation) */
 int64 CTransaction::nMinTxFee = 100000;
@@ -1070,6 +1072,41 @@ uint256 static GetOrphanRoot(const CBlockHeader* pblock)
     return pblock->GetHash();
 }
 
+
+
+// yacoin: increasing Nfactor gradually
+const unsigned char minNfactor = 10;
+const unsigned char maxNfactor = 30;
+
+unsigned char GetNfactor(int64 nTimestamp) {
+    int l = 0;
+
+    if (nTimestamp <= nHardforkStartTime)
+        return 9; // standard Scrypt
+
+    if (nTimestamp <= nChainStartTimeNAdaptive)
+        return minNfactor;
+
+    int64 s = nTimestamp - nChainStartTimeNAdaptive;
+    while ((s >> 1) > 3) {
+      l += 1;
+      s >>= 1;
+    }
+
+    s &= 3;
+
+    int n = (l * 158 + s * 28 - 2670) / 100;
+
+    if (n < 0) n = 0;
+
+    if (n > 255)
+        printf( "GetNfactor(%lld) - something wrong(n == %d)\n", nTimestamp, n );
+
+    unsigned char N = (unsigned char) n;
+    //printf("GetNfactor: %d -> %d %d : %d / %d\n", nTimestamp - nChainStartTimeNAdaptive, l, s, n, min(max(N, minNfactor), maxNfactor));
+
+    return min(max(N, minNfactor), maxNfactor);
+}
 
 // Spaincoin subsidy table
 const static int spa_subsidy[101] = {
@@ -4709,14 +4746,26 @@ void static SpaincoinMiner(CWallet *pwallet)
             unsigned int nHashesDone = 0;
 
             uint256 thash;
-            char scratchpad[SCRYPT_SCRATCHPAD_SIZE];
+            
+            unsigned long int scrypt_scratpad_size_current_block = ((1 << (GetNfactor(pblock->nTime) + 1)) * 128 ) + 63;
+            
+            char scratchpad[scrypt_scratpad_size_current_block];
+            
+            /*printf("nTime -> %d", pblock->nTime);
+            printf("scrypt_scratpad_size_current_block -> %ld", sizeof(scrypt_scratpad_size_current_block));
+            printf("scratchpad -> %d", sizeof(scratchpad));*/
+            
             loop
             {
-                scrypt_1024_1_1_256_sp(BEGIN(pblock->nVersion), BEGIN(thash), scratchpad);
+
+                // Generic scrypt
+                scrypt_N_1_1_256_sp_generic(BEGIN(pblock->nVersion), BEGIN(thash), scratchpad, GetNfactor(pblock->nTime));
+
 
                 if (thash <= hashTarget)
                 {
                     // Found a solution
+                    printf("Entering to found a solution section");
                     SetThreadPriority(THREAD_PRIORITY_NORMAL);
                     CheckWork(pblock, *pwallet, reservekey);
                     SetThreadPriority(THREAD_PRIORITY_LOWEST);

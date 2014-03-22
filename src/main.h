@@ -194,7 +194,7 @@ bool VerifySignature(const CCoins& txFrom, const CTransaction& txTo, unsigned in
 bool AbortNode(const std::string &msg);
 
 
-
+unsigned char GetNfactor(int64 nTimestamp);
 
 
 
@@ -1367,7 +1367,7 @@ public:
     uint256 GetPoWHash() const
     {
         uint256 thash;
-        scrypt_1024_1_1_256(BEGIN(nVersion), BEGIN(thash));
+        scrypt_N_1_1_256(BEGIN(nVersion), BEGIN(thash), GetNfactor(nTime));
         return thash;
     }
 
